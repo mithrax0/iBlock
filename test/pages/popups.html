@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Pop-ups</title></head><body style="font:16px system-ui;padding:20px">
+<p id="text">Texte quelconque (clic = popunder)</p>
+<button id="login" onclick="window.open('https://accounts.google.com/login','g','width=500,height=600')">Se connecter avec Google</button>
+<p><a id="hijacked" href="/popups.html#section">Lien interne détourné</a></p>
+<p><a id="external" href="https://wikipedia.org/" target="_blank">Wikipedia</a></p>
+<p id="text2">Autre texte (clic = lien invisible)</p>
+<script>
+document.addEventListener('click', function (e) {
+  if (e.target.id === 'text') window.open('https://evil.example/pop');
+  if (e.target.id === 'hijacked') window.open('https://evil.example/hijack');
+  if (e.target.id === 'external') { e.preventDefault(); window.open(e.target.href); }
+  if (e.target.id === 'text2') {
+    var a = document.createElement('a');
+    a.href = 'https://evil.example/a'; a.target = '_blank';
+    a.addEventListener('click', function (ev) { window.__anchorNav = true; ev.preventDefault(); });
+    a.click();
+  }
+});
+window.__autoOpen = function () {};
+window.__autoOpenLater = function () { window.open('https://evil.example/auto'); };
+</script>
+</body></html>

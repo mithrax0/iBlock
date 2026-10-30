@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         iBlock
 // @namespace    https://github.com/mithrax0/iBlock
-// @version      0.1.0
+// @version      0.2.0
 // @description  Bloqueur façon uBlock Origin pour Safari sur iPadOS : pop-ups, pubs, bannières cookies, nuisances. À installer avec « iBlock (page) ».
 // @author       mithrax0
 // @match        *://*/*

@@ -2,13 +2,13 @@
 
 Bloqueur façon **uBlock Origin** pour **Safari sur iPad** (et iPhone), sous forme de userscripts pour l'app gratuite [Userscripts](https://apps.apple.com/app/userscripts/id1463298887).
 
-> Version 0.1 : phases 1 et 2 (socle + anti pop-ups). Voir la [feuille de route](#feuille-de-route).
+> Version 0.2 : phases 1 et 2 (socle + anti pop-ups). Voir la [feuille de route](#feuille-de-route).
 
 ## Ce que fait iBlock
 
 | Fonction | Détail |
 |---|---|
-| **Anti pop-ups** | Bloque les fenêtres ouvertes sans votre accord, les popunders au premier clic, les liens détournés et les liens invisibles cliqués par script. Une notification permet d'ouvrir quand même. |
+| **Anti pop-ups** | Mode strict : une pop-up vers un autre site n'est autorisée que si vous touchez un lien vers ce site, ou pour une connexion, un partage ou un paiement connus (Google, Apple, PayPal…). Bloque aussi les popunders des lecteurs vidéo, les liens invisibles, les formulaires et les contournements par iframe. Une notification « Ouvrir » permet d'ouvrir quand même. |
 | **Calques pièges** | Retire les liens transparents qui recouvrent toute la page pour vous envoyer vers une pub. |
 | **Bannières cookies** | Clique sur « Tout refuser » quand c'est possible (OneTrust, Didomi, Cookiebot, Axeptio, tarteaucitron…), sinon masque la bannière. Débloque le défilement de la page. |
 | **Publicités** | Masque les emplacements publicitaires connus (Google, Taboola, Outbrain…). |
@@ -24,13 +24,12 @@ Bloqueur façon **uBlock Origin** pour **Safari sur iPad** (et iPhone), sous for
 2. Ouvrez l'app une fois et choisissez un dossier de sauvegarde (par exemple « Sur mon iPad › Userscripts »).
 3. **Réglages › Apps › Safari › Extensions › Userscripts** : activez l'extension, puis dans « Autorisations » choisissez **Toujours autoriser** sur **Tous les sites web**.
 
-### 2. Les deux scripts d'iBlock
-iBlock est composé de **deux scripts** à installer tous les deux :
+### 2. Les scripts d'iBlock
 
 | Script | Rôle |
 |---|---|
-| **iBlock** | Interface, filtres, cookies, zapper |
-| **iBlock (page)** | Anti pop-ups et scriptlets (doit tourner dans le contexte de la page) |
+| **iBlock** (indispensable) | Tout : interface, filtres, cookies, anti pop-ups, zapper |
+| **iBlock (page)** (recommandé) | Prend le relais de l'anti pop-ups et des scriptlets sur les sites à sécurité renforcée (CSP stricte), où le script principal ne peut pas agir |
 
 Pour chacun :
 1. Ouvrez le lien dans **Safari** :
@@ -100,11 +99,12 @@ iBlock masque et neutralise, mais ne peut pas empêcher les téléchargements. P
 ## Développement
 
 ```
-node tools/build-meta.cjs   # régénère les .meta.js après un changement de version
-node test/run.cjs           # tests automatisés (Chromium via Playwright)
+node tools/build.cjs   # construit les scripts (à lancer après toute modification)
+node test/run.cjs      # tests automatisés (Chromium via Playwright)
 ```
 
-À chaque nouvelle version : augmenter `@version` dans les deux scripts (et `VERSION` dans `iBlock.user.js`), puis lancer `build-meta`.
+- `src/page.js` : code « page » (anti pop-ups, scriptlets). Il est généré dans `iBlock-page.user.js` **et** embarqué dans `iBlock.user.js`. Ne modifiez pas ces copies générées.
+- `VERSION` : numéro de version, reporté partout par `build.cjs` (à augmenter à chaque publication pour déclencher les mises à jour).
 
 ## Licence
 

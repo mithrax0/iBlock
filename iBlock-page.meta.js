@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         iBlock (page)
 // @namespace    https://github.com/mithrax0/iBlock
-// @version      0.1.0
-// @description  iBlock, partie « page » : protection anti pop-ups et scriptlets. À installer avec le script « iBlock ».
+// @version      0.2.0
+// @description  iBlock, partie « page » : anti pop-ups et scriptlets sur les sites à sécurité renforcée. Complète le script « iBlock ».
 // @author       mithrax0
 // @match        *://*/*
 // @run-at       document-start

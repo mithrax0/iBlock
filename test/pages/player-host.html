@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Épisode</title></head><body style="font:16px system-ui;margin:0;padding:20px">
+<h1>Épisode 1</h1>
+<iframe id="player" width="640" height="360" style="border:0"></iframe>
+<script>
+// Lecteur hébergé sur un autre domaine (localhost vs 127.0.0.1), comme ansembed.net.
+var other = location.hostname === '127.0.0.1' ? 'localhost' : '127.0.0.1';
+document.getElementById('player').src = location.protocol + '//' + other + ':' + location.port + '/player.html';
+</script>
+</body></html>

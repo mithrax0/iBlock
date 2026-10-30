@@ -122,6 +122,54 @@ function check(name, ok, extra) {
     await page.context().close();
   }
 
+  // --- 2b. Lecteur vidéo dans une iframe d'un autre site (cas anime-sama) ----
+  {
+    const page = await newPage();
+    const ctx = page.context();
+    const popups = [];
+    ctx.on('page', (p) => popups.push(p.url()));
+    page.on('popup', (p) => popups.push(`popup:${p.url()}`));
+    await page.goto(`${base}/player-host.html`);
+    await page.waitForTimeout(1200);
+    const frame = page.frames().find((f) => f.url().includes('player.html'));
+    check('lecteur chargé dans une iframe tierce', !!frame);
+    const opened = () => frame.evaluate(() => window.__opened.slice());
+    await frame.click('#play');
+    await page.waitForTimeout(300);
+    check('bouton ▶ du lecteur : popunder bloqué', !(await opened()).includes('https://ads.example/pop'));
+    await frame.click('#iframe-bypass');
+    await page.waitForTimeout(500);
+    const log1 = await frame.evaluate(() => window.__log.slice());
+    check('contournement par iframe vide bloqué', log1.includes('iframe-open=null') && !popups.some((u) => u.includes('iframe-pop')), log1.join(' '));
+    await frame.click('#form-bypass');
+    await page.waitForTimeout(800);
+    check('contournement par formulaire bloqué', !popups.some((u) => u.includes('ads.example/form')), popups.join(' '));
+    await frame.click('#named');
+    await page.waitForTimeout(300);
+    check('ouverture dans une iframe nommée autorisée', (await opened()).includes('https://other.example/named'));
+    await frame.click('#ext');
+    await page.waitForTimeout(300);
+    check('site externe depuis un bouton : bloqué (mode strict)', !(await opened()).includes('https://other.example/'));
+    check('aucune nouvelle fenêtre', popups.length === 0, popups.join(' '));
+    check('aucune erreur JS', page.errors.length === 0, page.errors.join(' | '));
+    await page.context().close();
+  }
+
+  // --- 2c. Crochet iframe : protection injectée uniquement dans la page principale
+  {
+    const ctx = await browser.newContext();
+    const popups = [];
+    ctx.on('page', (p) => popups.push(p.url()));
+    const page = await ctx.newPage();
+    await page.goto(`${base}/player.html`);
+    await page.evaluate(PAGE);
+    await page.click('#iframe-bypass');
+    await page.waitForTimeout(800);
+    const log = await page.evaluate(() => window.__log.slice());
+    check('crochet contentWindow : window.open intact neutralisé', log.includes('iframeGuardPreinstalled=false') && log.includes('iframe-open=null') && popups.length === 1, `${log.join(' ')} pages=${popups.length}`);
+    await ctx.close();
+  }
+
   // --- 3. Calque piège --------------------------------------------------------
   {
     const page = await newPage();

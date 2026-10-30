@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Lecteur</title>
+<style>body{margin:0;background:#000;color:#fff;font:16px system-ui} .jw{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.jw-display-icon-container{width:80px;height:80px;border-radius:40px;background:#fff3;display:flex;align-items:center;justify-content:center}</style></head>
+<body>
+<div class="jw"><div class="jw-display-icon-container" role="button" id="play" aria-label="Lecture">▶</div></div>
+<button id="iframe-bypass" style="position:absolute;top:4px;left:4px">A</button>
+<button id="form-bypass" style="position:absolute;top:4px;left:40px">B</button>
+<button id="named" style="position:absolute;top:4px;left:76px">C</button>
+<button id="ext" style="position:absolute;top:4px;left:112px">D</button>
+<iframe name="frm" style="display:none"></iframe>
+<script>
+window.__log = [];
+document.addEventListener('click', function (e) {
+  var id = e.target.id;
+  if (id === 'play') window.open('https://ads.example/pop');               // popunder façon Monetag
+  if (id === 'iframe-bypass') {                                              // window.open « intact » via iframe vide
+    var f = document.createElement('iframe'); f.style.display = 'none'; document.body.appendChild(f);
+    window.__log.push('iframeGuardPreinstalled=' + !!f.contentWindow.__iBlockPage);
+    var w = f.contentWindow.open('https://ads.example/iframe-pop'); window.__log.push('iframe-open=' + (w ? 'opened' : 'null'));
+  }
+  if (id === 'form-bypass') {                                                // formulaire vers un nouvel onglet
+    var form = document.createElement('form'); form.action = 'https://ads.example/form'; form.target = '_blank'; form.method = 'get';
+    document.body.appendChild(form); form.submit();
+  }
+  if (id === 'named') { window.open('/player.html#x', 'frm'); window.open('https://other.example/named', 'frm'); window.__log.push('named-done'); }
+  if (id === 'ext') { var r = window.open('https://other.example/'); window.__log.push('ext=' + (r ? 'opened' : 'null')); }
+});
+</script>
+</body></html>

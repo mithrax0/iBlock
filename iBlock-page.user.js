@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         iBlock (page)
 // @namespace    https://github.com/mithrax0/iBlock
-// @version      0.1.0
-// @description  iBlock, partie « page » : protection anti pop-ups et scriptlets. À installer avec le script « iBlock ».
+// @version      0.2.0
+// @description  iBlock, partie « page » : anti pop-ups et scriptlets sur les sites à sécurité renforcée. Complète le script « iBlock ».
 // @author       mithrax0
 // @match        *://*/*
 // @run-at       document-start
@@ -11,6 +11,8 @@
 // @updateURL    https://raw.githubusercontent.com/mithrax0/iBlock/main/iBlock-page.meta.js
 // @downloadURL  https://raw.githubusercontent.com/mithrax0/iBlock/main/iBlock-page.user.js
 // ==/UserScript==
+
+// Fichier généré par tools/build.cjs à partir de src/page.js : ne pas modifier.
 
 /*
  * Ce script tourne dans le contexte JavaScript de la page (nécessaire pour
@@ -116,6 +118,20 @@
   // ---------------------------------------------------------------------------
   const allowOnce = new Set();
 
+  // Sites légitimes souvent ouverts dans une fenêtre (connexion, partage, paiement).
+  const POPUP_ALLOW = [
+    'accounts.google.com', 'accounts.youtube.com', 'appleid.apple.com', 'idmsa.apple.com',
+    'facebook.com', 'twitter.com', 'x.com', 'linkedin.com', 'pinterest.com', 'reddit.com',
+    'tumblr.com', 'bsky.app', 'threads.net', 'vk.com', 'login.microsoftonline.com', 'login.live.com',
+    'github.com', 'discord.com', 'twitch.tv', 'spotify.com', 'steamcommunity.com',
+    'paypal.com', 'stripe.com', 'pay.google.com', 'whatsapp.com', 'wa.me', 't.me', 'telegram.me',
+    'mail.google.com', 'outlook.live.com', 'auth0.com', 'okta.com',
+  ];
+  function allowedHost(host) {
+    host = host.toLowerCase();
+    return POPUP_ALLOW.some((d) => host === d || host.endsWith(`.${d}`));
+  }
+
   // Dernier geste de l'utilisateur, capturé avant les scripts du site.
   const gesture = { time: 0, target: null, opens: 0 };
   const onGesture = (ev) => {
@@ -129,6 +145,13 @@
   }
 
   const INTERACTIVE = 'a[href],button,input[type="button"],input[type="submit"],input[type="image"],[role="button"],[role="link"],[role="menuitem"],select,label,summary';
+  // Un « vrai » bouton : les lecteurs vidéo déguisent souvent des <div> en boutons.
+  const REAL_BUTTON = 'button,input[type="button"],input[type="submit"],input[type="image"]';
+
+  function gestureElement() {
+    const t = gesture.target;
+    return t && t.nodeType === 1 && typeof t.closest === 'function' ? t : null;
+  }
 
   function popupVerdict(url) {
     const full = absUrl(url || 'about:blank');
@@ -136,112 +159,171 @@
       allowOnce.delete(full);
       return { allow: true };
     }
-    const recent = Date.now() - gesture.time < 1500;
-    if (!recent) {
+    if (Date.now() - gesture.time > 1500) {
       // Aucun geste récent : ouverture automatique → pop-up indésirable.
       return { allow: false, reason: 'ouverture automatique' };
     }
     gesture.opens += 1;
     if (gesture.opens > 1) return { allow: false, reason: 'ouvertures multiples' };
 
-    const el = gesture.target && gesture.target.closest ? gesture.target : null;
-    const interactive = el ? el.closest(INTERACTIVE) : null;
-
+    const el = gestureElement();
     if (!url || full === 'about:blank') {
-      // Fenêtre vide puis redirection : technique classique des popunders,
-      // mais aussi utilisée par certains boutons de partage/connexion.
-      return interactive && !interactive.matches('a[href]')
+      // Fenêtre vide puis redirection : technique classique des popunders.
+      return el && el.closest(REAL_BUTTON)
         ? { allow: true }
         : { allow: false, reason: 'fenêtre vide suspecte' };
     }
+    let u;
+    try { u = new URL(full); } catch (e) { return { allow: true }; }
+    if (/^(data|blob|javascript):$/.test(u.protocol)) return { allow: false, reason: 'adresse suspecte' };
+    if (!/^https?:$/.test(u.protocol)) return { allow: true };
     if (sameSite(full)) return { allow: true };
 
-    if (!interactive) {
-      // Clic sur une zone non interactive (texte, fond, lecteur vidéo…).
-      return { allow: false, reason: 'clic détourné' };
-    }
-    if (interactive.matches('a[href]')) {
-      // Clic sur un lien qui ouvre AUTRE CHOSE que sa propre destination.
-      const href = absUrl(interactive.getAttribute('href'));
+    const link = el && el.closest('a[href]');
+    if (link) {
+      // Clic sur un lien : seule sa propre destination peut s'ouvrir.
+      const href = absUrl(link.getAttribute('href'));
       if (href === full) return { allow: true };
       try {
-        if (new URL(href).hostname === new URL(full).hostname) return { allow: true };
+        if (new URL(href).hostname === u.hostname) return { allow: true };
       } catch (e) { /* ignore */ }
       return { allow: false, reason: 'lien détourné' };
     }
-    // Bouton (connexion Google/Apple, partage…) : autorisé.
-    return { allow: true };
+    if (allowedHost(u.hostname)) return { allow: true };
+    // Mode strict : un site externe ne s'ouvre pas depuis un bouton quelconque
+    // (le bouton ▶ d'un lecteur vidéo par exemple).
+    return { allow: false, reason: el && el.closest(INTERACTIVE) ? 'site externe' : 'clic détourné' };
   }
 
-  if (features.popups) {
-    const nativeOpen = window.open;
-    const guardedOpen = disguise(function open(url, target, feats) {
-      const target_ = target == null ? '' : String(target);
-      // Ouverture dans la fenêtre courante : ce n'est pas un pop-up.
-      if (/^_(self|top|parent)$/i.test(target_)) {
-        return Reflect.apply(nativeOpen, this, arguments);
+  // window.open(url, "nom") vers une iframe existante n'est pas un pop-up.
+  function targetsFrame(win, name) {
+    if (!name || /^_(self|top|parent)$/i.test(name)) return true;
+    if (/^_blank$/i.test(name)) return false;
+    try {
+      for (let i = 0; i < win.frames.length; i += 1) {
+        try { if (win.frames[i].name === name) return true; } catch (e) { /* cross-origin */ }
       }
+    } catch (e) { /* ignore */ }
+    return false;
+  }
+
+  function isAnchor(a) {
+    return !!a && a.nodeType === 1 && a.tagName === 'A';
+  }
+
+  function suspiciousAnchor(a) {
+    if (!isAnchor(a)) return false;
+    const t = (a.getAttribute('target') || '').toLowerCase();
+    if (!t || t === '_self' || t === '_top' || t === '_parent') return false;
+    const href = a.getAttribute('href');
+    if (!href || sameSite(href)) return false;
+    return true;
+  }
+
+  function anchorBlocked(a) {
+    if (!suspiciousAnchor(a)) return false;
+    // Un lien réellement touché par l'utilisateur est toujours autorisé.
+    const touched = gesture.target && a.contains(gesture.target) && Date.now() - gesture.time < 1500;
+    if (touched) return false;
+    const verdict = popupVerdict(a.href);
+    if (verdict.allow) return false;
+    send('popup-blocked', { url: a.href, reason: 'lien invisible cliqué par script' });
+    return true;
+  }
+
+  function formBlocked(f) {
+    const t = f.getAttribute('target') || '';
+    if (targetsFrame(f.ownerDocument.defaultView || window, t)) return false;
+    const action = absUrl(f.getAttribute('action') || location.href);
+    if (sameSite(action)) return false;
+    const verdict = popupVerdict(action);
+    if (verdict.allow) return false;
+    send('popup-blocked', { url: action, reason: 'formulaire vers un nouvel onglet' });
+    return true;
+  }
+
+  function override(obj, prop, fn) {
+    try {
+      Object.defineProperty(obj, prop, { value: fn, writable: true, configurable: true, enumerable: true });
+    } catch (e) {
+      try { obj[prop] = fn; } catch (e2) { /* ignore */ }
+    }
+  }
+
+  // Protège une fenêtre : la page elle-même et les iframes vides créées par les
+  // régies pour récupérer un window.open « intact ».
+  const protectedWindows = new WeakSet();
+  function protectWindow(w) {
+    let nativeOpen;
+    try {
+      if (protectedWindows.has(w)) return;
+      nativeOpen = w.open; // lève une exception si la fenêtre est d'une autre origine
+      protectedWindows.add(w);
+    } catch (e) {
+      return;
+    }
+
+    override(w, 'open', disguise(function open(url, target) {
+      const name = target == null ? '' : String(target);
+      if (name && targetsFrame(w, name)) return Reflect.apply(nativeOpen, this, arguments);
       const verdict = popupVerdict(url == null ? '' : String(url));
       if (verdict.allow) return Reflect.apply(nativeOpen, this, arguments);
       send('popup-blocked', { url: absUrl(url || 'about:blank'), reason: verdict.reason });
       return null;
-    }, 'open');
-    try {
-      Object.defineProperty(window, 'open', {
-        value: guardedOpen, writable: true, configurable: true, enumerable: true,
-      });
-    } catch (e) {
-      window.open = guardedOpen;
-    }
+    }, 'open'));
 
-    // Liens _blank cliqués par script (a.click() / dispatchEvent) sur des
-    // éléments invisibles ou détachés : technique de popunder.
-    const anchorProto = HTMLAnchorElement.prototype;
-    const nativeClick = HTMLElement.prototype.click;
-    function suspiciousAnchor(a) {
-      if (!(a instanceof HTMLAnchorElement)) return false;
-      const t = (a.getAttribute('target') || '').toLowerCase();
-      if (!t || t === '_self' || t === '_top' || t === '_parent') return false;
-      const href = a.getAttribute('href');
-      if (!href || sameSite(href)) return false;
-      return true;
-    }
-    const guardedClick = disguise(function click() {
-      if (this instanceof HTMLAnchorElement && suspiciousAnchor(this)) {
-        const verdict = popupVerdict(this.href);
-        // Un lien réellement touché par l'utilisateur est toujours autorisé.
-        const touched = gesture.target && this.contains(gesture.target);
-        if (!verdict.allow && !touched) {
-          send('popup-blocked', { url: this.href, reason: 'lien invisible cliqué par script' });
-          return undefined;
-        }
-      }
+    const nativeClick = w.HTMLElement.prototype.click;
+    override(w.HTMLAnchorElement.prototype, 'click', disguise(function click() {
+      if (anchorBlocked(this)) return undefined;
       return Reflect.apply(nativeClick, this, arguments);
-    }, 'click');
-    try {
-      Object.defineProperty(anchorProto, 'click', {
-        value: guardedClick, writable: true, configurable: true,
-      });
-    } catch (e) { /* ignore */ }
+    }, 'click'));
 
-    const nativeDispatch = EventTarget.prototype.dispatchEvent;
-    const guardedDispatch = disguise(function dispatchEvent(ev) {
-      if (ev && ev.type === 'click' && !ev.isTrusted && suspiciousAnchor(this)) {
-        const touched = gesture.target && this.contains && this.contains(gesture.target);
-        const verdict = popupVerdict(this.href);
-        if (!verdict.allow && !touched) {
-          send('popup-blocked', { url: this.href, reason: 'lien invisible cliqué par script' });
-          return false;
-        }
-      }
+    const nativeDispatch = w.EventTarget.prototype.dispatchEvent;
+    override(w.EventTarget.prototype, 'dispatchEvent', disguise(function dispatchEvent(ev) {
+      if (ev && ev.type === 'click' && !ev.isTrusted && anchorBlocked(this)) return false;
       return Reflect.apply(nativeDispatch, this, arguments);
-    }, 'dispatchEvent');
-    try {
-      Object.defineProperty(EventTarget.prototype, 'dispatchEvent', {
-        value: guardedDispatch, writable: true, configurable: true,
-      });
-    } catch (e) { /* ignore */ }
+    }, 'dispatchEvent'));
+
+    const formProto = w.HTMLFormElement.prototype;
+    const nativeSubmit = formProto.submit;
+    override(formProto, 'submit', disguise(function submit() {
+      if (formBlocked(this)) return undefined;
+      return Reflect.apply(nativeSubmit, this, arguments);
+    }, 'submit'));
+    const nativeRequestSubmit = formProto.requestSubmit;
+    if (typeof nativeRequestSubmit === 'function') {
+      override(formProto, 'requestSubmit', disguise(function requestSubmit() {
+        if (formBlocked(this)) return undefined;
+        return Reflect.apply(nativeRequestSubmit, this, arguments);
+      }, 'requestSubmit'));
+    }
+
+    // Toute iframe consultée par un script est protégée à son tour.
+    for (const Ctor of [w.HTMLIFrameElement, w.HTMLFrameElement, w.HTMLObjectElement]) {
+      if (!Ctor) continue;
+      for (const prop of ['contentWindow', 'contentDocument']) {
+        const d = Object.getOwnPropertyDescriptor(Ctor.prototype, prop);
+        if (!d || !d.get) continue;
+        const getter = d.get;
+        try {
+          Object.defineProperty(Ctor.prototype, prop, {
+            configurable: true,
+            enumerable: d.enumerable,
+            get: disguise(function () {
+              const v = getter.call(this);
+              try {
+                const win = prop === 'contentWindow' ? v : v && v.defaultView;
+                if (win) protectWindow(win);
+              } catch (e) { /* ignore */ }
+              return v;
+            }, `get ${prop}`),
+          });
+        } catch (e) { /* ignore */ }
+      }
+    }
   }
+
+  if (features.popups) protectWindow(window);
 
   // ---------------------------------------------------------------------------
   // Scriptlets (sous-ensemble compatible uBlock Origin)
